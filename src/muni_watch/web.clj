@@ -11,42 +11,27 @@
             [ring.util.codec :as ring-codec]
             [cemerick.drawbridge :as drawbridge]
             [environ.core :refer [env]]
-            [clojure.xml :as xml]
             [clj-http.client :as client]
             [hiccup.core :refer :all]
-            [clj-json.core :as json]))
+            [clojure.data.json :as json]))
 
 (defn get-stops []
   (-> (client/get "http://stormy-fjord-3536.herokuapp.com/get-stops")
       :body
-      json/parse-string))
+      json/read-str))
 
 (defn get-stop-predictions [stop-name]
   (-> (client/get
        "http://stormy-fjord-3536.herokuapp.com/get-predictions-for-stop"
        {:query-params {"name" (ring-codec/url-encode stop-name)}})
       :body
-      json/parse-string))
+      json/read-str))
 
 (defn show-stops []
   (html [:h1 "Yelpy Stops"]
         [:ul (for [stop (get-stops)]
                [:li [:a {:href (str "watch/" (stop "name"))} (stop "name")]])])
   )
-
-(defn womp-predictions [stop-name]
-  (json/generate-string (get-stop-predictions stop-name)))
-
-(comment
-  (defn show-stop-predictions [stop-name]
-    (let [predictions (get-stop-predictions stop-name)]
-      (dorun (html [:h1 "Predictions for " (get-in (first predictions) ["attrs" "stoptitle"])]
-                   (for [route predictions]
-                     [:h2 (get-in route [:attrs :routetitle])]
-                     (for [direction (:content route)]
-                       [:h3 (get-in direction [:attrs :title])]
-                       [:ul (for [prediction (:content direction)]
-                              [:li (get-in prediction [:attrs :minutes]) " minutes"])])))))))
 
 (defn show-stop-predictions [stop-name]
   (let [predictions (get-stop-predictions stop-name)]
