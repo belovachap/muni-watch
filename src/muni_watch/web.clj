@@ -8,39 +8,56 @@
             [ring.middleware.session.cookie :as cookie]
             [ring.adapter.jetty :as jetty]
             [ring.middleware.basic-authentication :as basic]
+            [ring.util.codec :as ring-codec]
             [cemerick.drawbridge :as drawbridge]
             [environ.core :refer [env]]
+            [clojure.xml :as xml]
             [clj-http.client :as client]
-            [hiccup.core :refer :all]))
+            [hiccup.core :refer :all]
+            [clj-json.core :as json]))
 
 (defn get-stops []
-  (:body (client/get
-          "http://stormy-fjord-3536.herokuapp.com/get-stops"
-          {:as :json})))
+  (-> (client/get "http://stormy-fjord-3536.herokuapp.com/get-stops")
+      :body
+      json/parse-string))
 
-(defn get-stop-predictions [stop-tag]
-  (:body (client/get
-          "http://stormy-fjord-3536.herokuapp.com/get-predictions-for-stop"
-          {:query-params {"stop-tag" stop-tag}
-           :as :json})))
+(defn get-stop-predictions [stop-name]
+  (-> (client/get
+       "http://stormy-fjord-3536.herokuapp.com/get-predictions-for-stop"
+       {:query-params {"name" (ring-codec/url-encode stop-name)}})
+      :body
+      json/parse-string))
 
 (defn show-stops []
   (html [:h1 "Yelpy Stops"]
         [:ul (for [stop (get-stops)]
-               [:li [:a {:href (str "watch/" (:stopTag stop))} (:title stop)]])])
+               [:li [:a {:href (str "watch/" (stop "name"))} (stop "name")]])])
   )
 
-(defn show-stop-predictions [stop-tag]
-  (let [predictions (get-stop-predictions stop-tag)]
-    (html [:h1 "Predictions for " (get-in (first predictions) [:attrs :stoptitle])]
-          (for [route predictions]
-            [:div
-             [:h2 (get-in route [:attrs :routetitle])]
-             (for [direction (:content route)]
-               [:div
-                [:h3 (get-in direction [:attrs :title])]
-                [:ul (for [prediction (:content direction)]
-                       [:li (get-in prediction [:attrs :minutes]) " minutes"])]])]))))
+(defn womp-predictions [stop-name]
+  (json/generate-string (get-stop-predictions stop-name)))
+
+(comment
+  (defn show-stop-predictions [stop-name]
+    (let [predictions (get-stop-predictions stop-name)]
+      (dorun (html [:h1 "Predictions for " (get-in (first predictions) ["attrs" "stoptitle"])]
+                   (for [route predictions]
+                     [:h2 (get-in route [:attrs :routetitle])]
+                     (for [direction (:content route)]
+                       [:h3 (get-in direction [:attrs :title])]
+                       [:ul (for [prediction (:content direction)]
+                              [:li (get-in prediction [:attrs :minutes]) " minutes"])])))))))
+
+(defn show-stop-predictions [stop-name]
+  (let [predictions (get-stop-predictions stop-name)]
+    (html [:div [:h1 "Predictions for " (get-in (first predictions) ["attrs" "stoptitle"])]
+           (for [route predictions]
+             [:div [:h2 (get-in route ["attrs" "routetitle"])]
+              (for [direction (route "content")]
+                [:div
+                 [:h3 (get-in direction ["attrs" "title"])]
+                 [:ul (for [prediction (direction "content")] 
+                        [:li (get-in prediction ["attrs" "minutes"]) " minutes"])]])])])))
 
 (defn- authenticated? [user pass]
   ;; TODO: heroku config:add REPL_USER=[...] REPL_PASSWORD=[...]
@@ -56,8 +73,8 @@
        (drawbridge req))
   (GET "/" []
        (show-stops))
-  (GET "/watch/:stop-id" [stop-id]
-       (show-stop-predictions stop-id))
+  (GET "/watch/:stop-name" [stop-name]
+       (show-stop-predictions stop-name))
   (ANY "*" []
        (route/not-found (slurp (io/resource "404.html")))))
 
